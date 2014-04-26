@@ -25,7 +25,7 @@ namespace test_md5
             int found = 0;
             DateTime seg = DateTime.Now;
             int maxlen = 0;
-            foreach(string value in LetterGen(10))
+            foreach(string value in LetterGen(12))
             {
                 int len = t.HashSame(value);
 
@@ -60,9 +60,11 @@ namespace test_md5
         {
             char[] chardata = new char[chars];
 
+            // Randomize starting point
+            Random r = new Random();
             for (int i = 0; i < chars; i++)
             {
-                chardata[i] = 'a';
+                chardata[i] = (char)('a' + r.Next(26));
             }
 
             while (true)
@@ -100,7 +102,22 @@ namespace test_md5
             comp1 = BitConverter.ToUInt64(data, 0);
             comp2 = BitConverter.ToUInt64(data, 8);
             md5gen = MD5.Create();
+
+
+            K = new UInt32[64];
+            for(int i=0;i<64;i++)
+            {
+                K[i] = (UInt32)Math.Floor(Math.Abs(Math.Sin(i + 1)) * Math.Pow(2, 32));
+            }
+
         }
+
+        UInt32[] K;
+        byte[] s = { 7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,
+                     5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,
+                     4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,
+                     6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 };
+
 
         public int BitsSame(byte[] hash)
         {
@@ -108,11 +125,16 @@ namespace test_md5
             hash1 = BitConverter.ToUInt64(hash, 0);
             hash2 = BitConverter.ToUInt64(hash, 8);
 
+            return BitsSame(hash1, hash2);
+        }
+
+        public int BitsSame(UInt64 hash1, UInt64 hash2)
+        {
+
             UInt64 test1, test2;
 
             test1 = ~(hash1 ^ comp1);
             test2 = ~(hash2 ^ comp2);
-
 
             test1 = (test1 & 0x5555555555555555L) + ((test1 & 0xAAAAAAAAAAAAAAAAL) >> 1);
             test1 = (test1 & 0x3333333333333333L) + ((test1 & 0xCCCCCCCCCCCCCCCCL) >> 2);
@@ -133,10 +155,101 @@ namespace test_md5
 
         public int HashSame(string src)
         {
-            byte[] hash = md5gen.ComputeHash(src.ToCharArray().Select(c => (byte)c).ToArray());
+            byte[] data = src.ToCharArray().Select(c => (byte)c).ToArray();
+//            byte[] hash = md5gen.ComputeHash(data);
 
-            return BitsSame(hash);
+
+            UInt64 hash1, hash2;
+            GenerateMd5(data, out hash1, out hash2);
+
+#if false
+            // Debug check
+            
+            UInt64 hash1a, hash2a;
+            hash1a = BitConverter.ToUInt64(hash, 0);
+            hash2a = BitConverter.ToUInt64(hash, 8);
+
+            if(hash1a != hash1 || hash2a != hash2) throw new Exception("Hash does not match expected value!");
+
+#endif
+
+            return BitsSame(hash1,hash2);
         }
+
+
+        UInt32[] message = new UInt32[16];
+
+        void GenerateMd5(byte[] input, out UInt64 hash1, out UInt64 hash2)
+        {
+            Array.Clear(message, 0, 16);
+            for (int i = 0; i < input.Length - 3; i += 4)
+            {
+                message[i / 4] = BitConverter.ToUInt32(input, i);
+            }
+            for (int i = input.Length&(~3); i < input.Length; i++)
+            {
+                message[i / 4] |= (uint)(input[i] << ((i & 3) * 8));
+            }
+
+            message[14] = (UInt32)(input.Length * 8);
+            // add trailing 1 bit
+            message[(input.Length) / 4] |= (0x80U << (((input.Length) % 4) * 8));
+
+            UInt32 A, B, C, D;
+            UInt32 h0, h1, h2, h3;
+
+            h0 = 0x67452301;   //A
+            h1 = 0xefcdab89;   //B
+            h2 = 0x98badcfe;   //C
+            h3 = 0x10325476;   //D
+
+            A = h0; B = h1; C = h2; D = h3;
+
+            UInt32 F,oldD;
+            int g;
+            for(int i=0; i<64;i++)
+            {
+                if(i<16)
+                {
+                    F = (B & C) | (~B & D);
+                    g = i;
+                } 
+                else if (i<32)
+                {
+                    F = (D & B) | (~D & C);
+                    g = (5 * i + 1) % 16;
+                } 
+                else if(i<48)
+                {
+                    F = B ^ C ^ D;
+                    g = (3 * i + 5) % 16;
+                } 
+                else
+                {
+                    F = C ^ (B | ~D);
+                    g = (7 * i) % 16;
+                }
+
+                UInt32 T = A + F + K[i] + message[g];
+                T = (T >> (32-s[i])) | (T << (s[i]));
+
+                oldD=D;
+                D = C;
+                C = B;
+                B = B + T;
+                A = oldD;
+            }
+
+            h0 += A;
+            h1 += B;
+            h2 += C;
+            h3 += D;
+
+            hash1 = h0 | ((UInt64)h1 << 32);
+            hash2 = h2 | ((UInt64)h3 << 32);
+        }
+
+
 
     }
 }
