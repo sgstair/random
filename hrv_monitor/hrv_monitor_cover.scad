@@ -1,11 +1,13 @@
 
 width=1;
 
-gap_size = 7;
-gap_width = 1.5;
+gap_size = 6.8;
+gap_width = 1.7;
 
-nongap = 8.5;
+nongap = 8.2;
 nonwid = 10;
+
+latchsize = 0.4;
 
 disc_dia = 24;
 disc_hei = 0.5;
@@ -23,6 +25,10 @@ module arm()
 
 	translate([-gap_width/2, gap_size/2,0])
 	cube([gap_width,width+(nongap-gap_size)/2,total_hei]);
+
+	translate([-gap_width/2, gap_size/2-latchsize,disc_hei+board_hei])
+	cube([gap_width,latchsize+width+(nongap-gap_size)/2,further_hei]);
+
 }
 
 union()

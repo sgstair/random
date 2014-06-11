@@ -43,13 +43,43 @@ typedef unsigned long u32;
 //  Stateless I/O
 //
 
-void led_set(int value)
+void led_set_red(int value)
 {
-	GPIO1DIR |= 0x2;
-	GPIO1DATA[2] = value?2:0;
+	GPIO1DIR |= (1<<10);
+	GPIO1DATA[(1<<10)] = value?(1<<10):0;
 }
 
 
+void led_set_green(int value)
+{
+	GPIO1DIR |= (1<<11);
+	GPIO1DATA[(1<<11)] = value?(1<<11):0;
+}
+
+
+int heartbeatvalue;
+// heartbeat: enable data transmission for the next 5 seconds.
+void usb_heartbeat()
+{
+	// Synchronize with interrupt.
+	InterruptDisable(INT_CT32B1);
+	heartbeatvalue = 500;
+	InterruptEnable(INT_CT32B1);
+	led_set_red(1);
+}
+
+
+// 0 = all off, 1..4 = turn on one LED
+void set_output_led(int led)
+{
+	GPIO1DIR |= 0x1E;
+	GPIO1DATA[0x1E] = 0;
+	
+	if(led >= 1 && led <= 4)
+	{
+		GPIO1DATA[0x1E] = 1<<led;
+	}
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,8 +103,8 @@ void timer_init()
 
 	// Interrupt and reset on match register 0
 	TMR32B1MCR = 3;
-	//TMR32B1MR0 = 1500000; // Reset every 1.5M cycles (tick rate of 125ms @ 12MHz)
-	TMR32B1MR0 = 3000000; // Reset every 3M cycles (tick rate of 125ms @ 24MHz)
+	//TMR32B1MR0 = 3000000; // Reset every 3M cycles (tick rate of 125ms @ 24MHz)
+	TMR32B1MR0 = 240000; // Reset every 240k cycles (tick rate of 100hz/10ms @ 24MHz)
 
 	timer_tick = 0;
 
@@ -98,9 +128,58 @@ void int_CT32B1()
 	// Clear pending interrupt
 	TMR32B1IR = TMR32B1IR;
 	InterruptClear(INT_CT32B1);
-
-
 	timer_tick++;
+	
+	led_set_red(0);
+	
+	// While in the timer interrupt, run the cycle to collect the data from our sensor and send the bytes if possible.
+	// This will take some time but currently it doesn't really matter if everything else is blocked.
+	
+	int values[5];
+	int adcr_base;
+	int ad_out;
+	
+	for(int i=0;i<5;i++)
+	{
+		set_output_led(i);
+		delayus(50);
+		adcr_base = 0x1001; // Select AD0 pin, 0x10 clock divider (effective AD clock is 1.5MHz. could run faster)
+		
+		values[i] = 0;
+		// Run 16 conversions with 10 bits of accuracy, to get a 14-bit output.
+		for(int n=0;n<16;n++)
+		{
+			AD0CR = adcr_base | 0x10000; // Start conversion.
+			ad_out = 0;
+			while(!(ad_out&0x80000000))
+			{
+				ad_out = AD0GDR;
+			}
+			values[i] += (ad_out>>6)&0x3FF;
+		}
+	}
+	
+	// Send the values on their way to the host, if we can.
+	if(Serial_BytesCanSend() >= 16 && heartbeatvalue > 0)
+	{
+		Serial_SendByte(0xFF);
+		Serial_SendByte(0xFF);
+		Serial_SendByte(timer_tick&255);
+		Serial_SendByte((timer_tick>>8)&255);
+		Serial_SendByte((timer_tick>>16)&255);
+		Serial_SendByte((timer_tick>>24)&255);
+		for(int i=0;i<5;i++)
+		{
+			Serial_SendByte(values[i]&255);
+			Serial_SendByte((values[i]>>8)&255);
+		}
+		Serial_HintMoreData();
+	}
+	
+	if(heartbeatvalue > 0)	
+	{
+		heartbeatvalue--;
+	}
 }
 
 
@@ -114,6 +193,8 @@ void int_CT32B1()
 int main(void) {
 //---------------------------------------------------------------------------------
 
+	heartbeatvalue = 0;
+
 
 	SYSAHBCLKCTRL = 0x1655F; // Turn on clock to important devices (gpio, iocon, CT16B1, CT32B1, ADC)
 	IOCON_PIO1_1 = 1 | IOCON_ADMODE_DIGITAL; // Default GPIO (led)
@@ -121,8 +202,16 @@ int main(void) {
 	IOCON_PIO0_6 = 1 ; // USB_CONNECT behavior.
 	IOCON_PIO0_3 = 1 ; // USB_VBUS behavior.
 	
-	IOCON_PIO0_8 = 0;
-	IOCON_PIO0_9 = 0;
+	IOCON_PIO1_10 = 0 | IOCON_ADMODE_DIGITAL; // Red LED
+	IOCON_PIO1_11 = 0; // Green LED
+	
+	IOCON_PIO0_11 = 2; // AD0, phototransistor input
+	
+	IOCON_PIO1_1 = 1 | IOCON_ADMODE_DIGITAL; // LED1
+	IOCON_PIO1_2 = 1 | IOCON_ADMODE_DIGITAL; // LED2
+	IOCON_PIO1_3 = 1 | IOCON_ADMODE_DIGITAL; // LED3
+	IOCON_PIO1_4 = 0 | IOCON_ADMODE_DIGITAL; // LED4
+
 
 	
 
@@ -133,7 +222,7 @@ int main(void) {
 	{
 		// Wake up the Crystal OSC
 		SYSOSCCTRL = 0;
-		PDRUNCFG = 0x050 | 0x400; // Turn on SYSOSC, SYSPLL, USBPLL (not usb yet)
+		PDRUNCFG = 0x040 | 0x400; // Turn on SYSOSC, SYSPLL, USBPLL, ADC (not usb yet)
 		delayms(5); // Give clock some time to warm up
 		// Setup SYSPLL to provide 24MHz cpu CLK. M=2, P=4
 		// Note that 24MHz is technically out of spec (should set waitstates for flash at >20MHz), but this works and is simpler.

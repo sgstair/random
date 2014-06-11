@@ -27,15 +27,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 
 unsigned char dpc_suspendcount;
 
+void usb_heartbeat();
+
 void dpc_work()
 {
-	int shouldhint = 0;
-	while(Serial_CanSendByte() && Serial_CanRecvByte())
+	int heartbeat = 0;
+	while(Serial_CanRecvByte())
 	{
-		shouldhint = 1;
-		Serial_SendByte(Serial_RecvByte());
+		Serial_RecvByte(); // Any value coming from USB heartbeats: enables data transmission for the next ~5 seconds.
+		heartbeat = 1;
 	}
-	if(shouldhint) Serial_HintMoreData();
+	
+	if(heartbeat) usb_heartbeat();
+	
+	
 }
 
 extern "C" void int_I2C0(); // use I2C0 for now, because it isn't being used by anything else.
