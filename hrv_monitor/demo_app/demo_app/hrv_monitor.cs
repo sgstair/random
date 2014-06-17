@@ -1,4 +1,26 @@
-﻿using System;
+﻿/*
+Copyright (c) 2014 Stephen Stair (sgstair@akkit.org)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+*/
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -25,7 +47,7 @@ namespace demo_app
         /// Enumerate hrv_monitor devices in the system
         /// </summary>
         /// <returns>List of device instance classes</returns>
-        public static hrv_monitor_instance[] EnumerateDevicePaths()
+        public static hrv_monitor_instance[] EnumerateInstances()
         {
             string[] devicePaths = WinUSBDevice.EnumerateDevices(new Guid("2bbdd6f9-37bd-4f86-8eba-0aa34476afde"));
             hrv_monitor_instance[] instances = new hrv_monitor_instance[devicePaths.Length];
@@ -58,6 +80,18 @@ namespace demo_app
     public class hrv_monitor_data
     {
         public const double DataPeriodMs = 100;
+
+        public delegate void HaveNewDataDelegate();
+        public event HaveNewDataDelegate HaveNewData;
+
+        private void SendHaveNewData()
+        {
+            HaveNewDataDelegate fn = HaveNewData;
+            if(fn != null)
+            {
+                fn();
+            }
+        }
 
         hrv_monitor Monitor;
         Timer DataTick;
@@ -127,6 +161,10 @@ namespace demo_app
                 }
             }
             // If we have data, notify any subscribers.
+            if(haveData)
+            {
+                SendHaveNewData();
+            }
         }
 
         private void SendHeartbeat()
@@ -151,7 +189,9 @@ namespace demo_app
             }
 
             // no, make a new span and queue it there.
-
+            hrv_monitor_data_span span = new hrv_monitor_data_span();
+            span.QueueSample(ref sample);
+            SpanData.Add(span);
 
         }
 
@@ -168,7 +208,8 @@ namespace demo_app
         /// It's not a good idea to interact with this object in other threads while trimming.
         /// </summary>
         /// <param name="samplesToKeep">Minimun number of samples to keep.</param>
-        public void TrimEarlySamples(int samplesToKeep)
+        /// <returns>Number of samples removed.</returns>
+        public int TrimEarlySamples(int samplesToKeep)
         {
             lock (this)
             {
@@ -181,7 +222,8 @@ namespace demo_app
                 int total = TotalSamples;
 
                 int canDelete = TotalSamples - samplesToKeep;
-                if(canDelete <= 0) return; // Nothing to do.
+                int deleted = 0;
+                if(canDelete <= 0) return 0; // Nothing to do.
 
                 // Walk through the list of spans and completely eliminate spans that we can.
                 int deleteIndex;
@@ -192,6 +234,7 @@ namespace demo_app
                         break;
                     }
                     canDelete -= SpanData[deleteIndex].Count; // We will delete this span.
+                    deleted += SpanData[deleteIndex].Count;
                 }
                 if(deleteIndex > 0)
                 {
@@ -204,10 +247,10 @@ namespace demo_app
                     if(canDelete > 0)
                     {
                         // Request this span to trim itself.
-                        SpanData[0].TrimEarlySamples(canDelete);
+                        deleted += SpanData[0].TrimEarlySamples(canDelete);
                     }
                 }
-
+                return deleted;
             }
         }
 
@@ -317,6 +360,8 @@ namespace demo_app
 
         internal void QueueSample(ref hrv_monitor_sample sample)
         {
+            NextSequence = sample.SequenceNumber + 1;
+
             if(Chunks.Count > 0)
             {
                 if(Chunks[Chunks.Count-1].HasSpace)
@@ -333,9 +378,10 @@ namespace demo_app
             SampleCount++;
         }
 
-        internal void TrimEarlySamples(int samplesToDelete)
+        internal int TrimEarlySamples(int samplesToDelete)
         {
-
+            // Todo, remove early chunks.
+            return 0;
         }
 
         internal void Freeze()
