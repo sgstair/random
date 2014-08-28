@@ -1,0 +1,3 @@
+[submodule "hrv_monitor/demo_app/winusbdotnet"]
+	path = hrv_monitor/demo_app/winusbdotnet
+	url = https://github.com/sgstair/winusbdotnet.git
