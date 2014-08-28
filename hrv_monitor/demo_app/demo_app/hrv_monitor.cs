@@ -33,12 +33,12 @@ namespace demo_app
 {
     public class hrv_monitor_instance
     {
-        internal hrv_monitor_instance(string devicePath)
+        internal hrv_monitor_instance(WinUSBEnumeratedDevice DeviceInfo)
         {
-            DevicePath = devicePath;
+            DeviceIdentifier = DeviceInfo;
         }
 
-        public readonly string DevicePath;
+        public readonly WinUSBEnumeratedDevice DeviceIdentifier;
     }
 
     public class hrv_monitor
@@ -49,7 +49,7 @@ namespace demo_app
         /// <returns>List of device instance classes</returns>
         public static hrv_monitor_instance[] EnumerateInstances()
         {
-            string[] devicePaths = WinUSBDevice.EnumerateDevices(new Guid("2bbdd6f9-37bd-4f86-8eba-0aa34476afde"));
+            WinUSBEnumeratedDevice[] devicePaths = WinUSBDevice.EnumerateDevices(new Guid("2bbdd6f9-37bd-4f86-8eba-0aa34476afde")).ToArray();
             hrv_monitor_instance[] instances = new hrv_monitor_instance[devicePaths.Length];
             for(int i=0;i<devicePaths.Length;i++)
             {
@@ -64,7 +64,7 @@ namespace demo_app
 
         public hrv_monitor(hrv_monitor_instance instance)
         {
-            Device = new WinUSBDevice(instance.DevicePath);
+            Device = new WinUSBDevice(instance.DeviceIdentifier);
             Data = new hrv_monitor_data(this);
         }
 
