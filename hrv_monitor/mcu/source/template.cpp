@@ -142,14 +142,14 @@ void int_CT32B1()
 	for(int i=0;i<5;i++)
 	{
 		set_output_led(i);
-		delayus(50);
-		adcr_base = 0x1001; // Select AD0 pin, 0x10 clock divider (effective AD clock is 1.5MHz. could run faster)
+		delayus(100);
+		adcr_base = 0x2F01; // Select AD0 pin, 0x2F clock divider (effective AD clock is 0.5MHz. could run faster)
 		
 		values[i] = 0;
 		// Run 16 conversions with 10 bits of accuracy, to get a 14-bit output.
 		for(int n=0;n<16;n++)
 		{
-			AD0CR = adcr_base | 0x10000; // Start conversion.
+			AD0CR = adcr_base | 0x01000000; // Start conversion.
 			ad_out = 0;
 			while(!(ad_out&0x80000000))
 			{
@@ -158,6 +158,7 @@ void int_CT32B1()
 			values[i] += (ad_out>>6)&0x3FF;
 		}
 	}
+	set_output_led(0);
 	
 	// Send the values on their way to the host, if we can.
 	if(Serial_BytesCanSend() >= 16 && heartbeatvalue > 0)
